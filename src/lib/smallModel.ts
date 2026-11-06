@@ -30,19 +30,21 @@ ${context.slice(0, 1600)}`
   while (recent[0]?.role === 'assistant') recent.shift()
   return [{ role: 'system', content: system }, ...recent]
 }
-export async function generateSmallModelTurn(messages: LessonMessage[], problem: Problem | undefined, goal: LearningGoal, complete: Parameters<typeof generateTutorReply>[1], context = '') {
+export async function generateSmallModelTurn(messages: LessonMessage[], problem: Problem | undefined, goal: LearningGoal, complete: Parameters<typeof generateTutorReply>[1], context = '', workshopContext = '') {
   const lesson = getLessonState(messages, problem?.slug)
   lesson.goal = goal
   // Tiny models explain; independently checked exercises provide learning evidence.
   // Do not let unverified model prose award mastery.
   const current = messages.findLast(message => message.role === 'user')?.content ?? ''
+  context = workshopContext ? 'APP EXERCISE STATE:\n'+workshopContext.slice(0, 1400)+'\nREFERENCE NOTES:\n'+context.slice(0, 200) : context
   const verified = verifiedSmallStep(current, problem, context, lesson.questions.other ?? 0)
   // Short prerequisite answers use checked content directly. Open questions still use AI.
-  if (verified.direct && (goal === 'concepts' || (goal === 'pseudocode' && membershipOrderExplanation(current)))) return { reply: verified.reply, lesson, attempts: 0 }
+  if (!workshopContext && verified.direct && (goal === 'concepts' || (goal === 'pseudocode' && membershipOrderExplanation(current)))) return { reply: verified.reply, lesson, attempts: 0 }
   const draft = await generateTutorReply(compactPayload(messages, problem, goal, context), complete, undefined, { temperature: 0.2, maxTokens: 128 })
   const repeated = messages.filter(message => message.role === 'assistant').slice(-3).some(message => similarReply(message.content, draft))
   const falseSetMemory = /\bset\b[^.!?]*\b(?:only|just)\b[^.!?]*\b(?:last|latest|most recent)\b/i.test(draft)
   const unsafe = goal === 'concepts' && (falseSetMemory || repeated || guidedReplyViolations(draft).length > 0 || /```|\b(?:def|function)\s+\w+|\b(?:seen|set)\.(?:add|has)\(|solution\s*:|automatically removed|array is empty|you (?:have )?mastered|you fully understand|(?:exercise|learning) record|you(?:'re| are) (?:right|correct)/i.test(draft) || draft.length > 700)
+  if (unsafe && workshopContext) throw new Error('The compact model could not provide a suitable workshop reply. Use checked workshop help or retry.')
   const reply = unsafe ? verified.reply : draft
   if (unsafe) lesson.questions.other = (lesson.questions.other ?? 0) + 1
   return { reply, lesson, attempts: 1 }

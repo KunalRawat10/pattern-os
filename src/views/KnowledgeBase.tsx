@@ -1,153 +1,34 @@
-import { useEffect, useState } from 'react'
-import { embedText } from '../lib/embeddings'
-import { chunkText, saveChunks, getAllChunks, clearChunks, deleteChunk, type NoteChunk } from '../lib/notesStore'
+import { useEffect, useRef, useState } from 'react'
+import { getAllChunks, replaceNoteChunks, type NoteChunk } from '../lib/notesStore'
+import { groupNotes,prepareNote,exportNotes,parseNoteBackup,type NoteDocument } from '../lib/noteDocuments'
 import type { TabId } from '../App'
-
-interface KnowledgeBaseProps {
-    onNavigate: (tab: TabId) => void
-}
-
-export default function KnowledgeBase({ onNavigate }: KnowledgeBaseProps) {
-    const [title, setTitle] = useState('')
-    const [notes, setNotes] = useState('')
-    const [status, setStatus] = useState('')
-    const [busy, setBusy] = useState(false)
-    const [chunks, setChunks] = useState<NoteChunk[]>([])
-
-    const refresh = async () => setChunks(await getAllChunks())
-
-    useEffect(() => {
-        refresh()
-    }, [])
-
-    const handleSave = async () => {
-        if (!notes.trim()) return
-        setBusy(true)
-        try {
-            const pieces = chunkText(notes)
-            const saved: NoteChunk[] = []
-            for (let i = 0; i < pieces.length; i++) {
-                setStatus(`Embedding chunk ${i + 1} of ${pieces.length}...`)
-                const embedding = await embedText(pieces[i], (pct: number) =>
-                    setStatus(`Loading embedding model (one-time, ~25MB)... ${pct}%`)
-                )
-                saved.push({
-                    id: `${Date.now()}-${i}`,
-                    sourceTitle: title.trim() || 'Untitled notes',
-                    text: pieces[i],
-                    embedding,
-                })
-            }
-            await saveChunks(saved)
-            setNotes('')
-            setTitle('')
-            setStatus(`Saved ${saved.length} chunk${saved.length === 1 ? '' : 's'}.`)
-            await refresh()
-        } catch (err) {
-            console.error(err)
-            setStatus('Something went wrong embedding your notes.')
-        } finally {
-            setBusy(false)
-        }
-    }
-
-    const handleDelete = async (id: string) => {
-        await deleteChunk(id)
-        await refresh()
-    }
-
-    const handleClearAll = async () => {
-        await clearChunks()
-        await refresh()
-    }
-
-    const grouped = chunks.reduce<Record<string, NoteChunk[]>>((acc, c) => {
-        acc[c.sourceTitle] = acc[c.sourceTitle] || []
-        acc[c.sourceTitle].push(c)
-        return acc
-    }, {})
-
-    return (
-        <div className="animate-fade-in space-y-6">
-            <div>
-                <button
-                    onClick={() => onNavigate('dashboard')}
-                    className="text-sm text-text-tertiary hover:text-accent mb-3"
-                >
-                    ← Back to field guide
-                </button>
-                <h2 className="text-2xl font-medium">Field notes</h2>
-                <p className="text-sm text-text-tertiary mt-1">
-                    Keep the explanations that clicked. Use your notes as a reference during practice.
-                </p>
-            </div>
-
-            <div className="workspace-panel p-5 sm:p-6 space-y-3">
-                <label htmlFor="note-title" className="block text-sm font-medium">Note title</label>
-                <input
-                    id="note-title"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Source title, e.g. 'Striver A2Z — Sliding Window'"
-                    className="w-full bg-surface/50 border border-border-subtle rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent/50"
-                />
-                <label htmlFor="note-content" className="block text-sm font-medium pt-2">Your notes</label>
-                <textarea
-                    id="note-content"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={8}
-                    placeholder="Paste your notes here..."
-                    className="w-full bg-surface/50 border border-border-subtle rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-accent/50"
-                />
-                <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-text-muted">{status}</span>
-                    <button
-                        onClick={handleSave}
-                        disabled={busy || !notes.trim()}
-                        className="shrink-0 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 disabled:opacity-40 transition-all"
-                    >
-                        {busy ? 'Preparing notes…' : 'Save notes'}
-                    </button>
-                </div>
-            </div>
-
-            {Object.keys(grouped).length > 0 && (
-                <div className="workspace-panel p-5 sm:p-6 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-medium text-text-secondary">
-                            Stored notes ({chunks.length} chunks)
-                        </h3>
-                        <button onClick={handleClearAll} className="text-xs text-danger hover:underline">
-                            Clear all
-                        </button>
-                    </div>
-                    {Object.entries(grouped).map(([src, items]) => (
-                        <div key={src} className="space-y-2">
-                            <div className="text-xs font-medium text-accent">
-                                {src} — {items.length} chunk{items.length > 1 ? 's' : ''}
-                            </div>
-                            {items.slice(0, 3).map((c) => (
-                                <div
-                                    key={c.id}
-                                    className="flex items-start justify-between gap-3 text-xs text-text-tertiary bg-surface/40 rounded-lg px-3 py-2"
-                                >
-                                    <span className="line-clamp-2">{c.text}</span>
-                                    <button
-                                        onClick={() => handleDelete(c.id)}
-                                        className="text-text-muted hover:text-danger shrink-0"
-                                    >
-                                        ✕
-                                    </button>
-                                </div>
-                            ))}
-                            {items.length > 3 && (
-                                <div className="text-[11px] text-text-muted pl-1">+ {items.length - 3} more</div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    )
+import './notes.css'
+const topics=['General','Arrays & Sets','Two Pointers','Sliding Window','Trees & Graphs','Complexity']
+const templates={explanation:'The idea in my own words:\n\nA small example:\n\nWhen I would use it:\n\nWhat I still find confusing:\n',mistake:'What I tried:\n\nWhy it went wrong:\n\nThe rule I will remember:\n\nA new example to check myself:\n'}
+function loadDraft():{title:string;text:string;topic:string;editing:string|null}{try{const d=JSON.parse(localStorage.getItem('patternos-note-draft')??'null');if(d&&typeof d.title==='string'&&typeof d.text==='string')return {title:d.title,text:d.text,topic:typeof d.topic==='string'?d.topic:'General',editing:typeof d.editing==='string'?d.editing:null}}catch{/* draft is optional */}return {title:'',text:'',topic:'General',editing:null}}
+function download(name:string,content:string,type:string){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
+export default function KnowledgeBase({onNavigate}:{onNavigate:(tab:TabId)=>void}){
+ const [draft,updateDraft]=useState(loadDraft),[chunks,setChunks]=useState<NoteChunk[]>([]),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[status,setStatus]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('All topics'),[selected,setSelected]=useState<string|null>(null),[removed,setRemoved]=useState<NoteChunk[]|null>(null),[draftWarning,setDraftWarning]=useState(''),[backupText,setBackupText]=useState('')
+ const fileRef=useRef<HTMLInputElement>(null),titleRef=useRef<HTMLInputElement>(null)
+ const documents=groupNotes(chunks),visible=documents.filter(n=>(filter==='All topics'||n.topic===filter)&&(n.title+' '+n.text+' '+n.topic).toLowerCase().includes(query.toLowerCase())),active=visible.find(n=>n.id===selected)
+ useEffect(()=>{let live=true;getAllChunks().then(items=>{if(live){setChunks(items);setReady(true)}}).catch(()=>{if(live)setStatus('Your browser could not open notes storage. Your draft is kept here; try again or allow site storage.')});return()=>{live=false}},[])
+ const setDraft=(next:typeof draft)=>{updateDraft(next);try{localStorage.setItem('patternos-note-draft',JSON.stringify(next));setDraftWarning('')}catch{setDraftWarning('Draft could not be saved on this device. Copy your text before leaving.')}}
+ const patch=(value:Partial<typeof draft>)=>setDraft({...draft,...value})
+ const refresh=async()=>setChunks(await getAllChunks())
+ const save=async()=>{
+  if(!draft.text.trim()||!ready)return
+  setBusy(true)
+  try{const old=documents.find(n=>n.id===draft.editing),id=old?.chunks[0].documentId??crypto.randomUUID(),next=prepareNote(id,draft.title,draft.text,draft.topic);await replaceNoteChunks(old?.chunks.map(c=>c.id)??[],next);setChunks(items=>[...items.filter(c=>!old?.chunks.some(o=>o.id===c.id)),...next]);setSelected(id);setDraft({title:'',text:'',topic:'General',editing:null});setStatus(old?'Changes saved.':'Note saved. Relevant passages can now be found during tutoring.')}catch{setStatus('Could not save. Your draft is still here; copy it or try again.')}finally{setBusy(false)}
+ }
+ const edit=(n:NoteDocument)=>{if(draft.text.trim()){setStatus('Save or clear your current draft before editing another note.');return}setDraft({title:n.title,text:n.text,topic:n.topic,editing:n.id});titleRef.current?.focus();setStatus('Editing your saved note. Save changes when ready.')}
+ const remove=async(n:NoteDocument)=>{setBusy(true);try{await replaceNoteChunks(n.chunks.map(c=>c.id),[]);setChunks(items=>items.filter(c=>!n.chunks.some(o=>o.id===c.id)));setRemoved(n.chunks);setSelected(null);setStatus('Note removed. You can undo the most recent deletion below.')}catch{setStatus('Could not remove this note. Please try again.')}finally{setBusy(false)}}
+ const undo=async()=>{if(!removed)return;setBusy(true);try{await replaceNoteChunks([],removed);await refresh();setRemoved(null);setStatus('Note restored.')}catch{setStatus('Could not restore yet. Try Undo again.')}finally{setBusy(false)}}
+ const restore=async(file:File)=>{setBusy(true);try{if(file.size>5000000)throw Error('Choose a backup smaller than 5 MB.');const notes=parseNoteBackup(await file.text());const saved=notes.flatMap(n=>prepareNote(crypto.randomUUID(),n.title,n.text,n.topic));await replaceNoteChunks([],saved);await refresh();setStatus('Imported '+notes.length+' notes. Existing notes were kept; repeated imports create extra copies.')}catch(e){setStatus(e instanceof Error?e.message:'Could not import the backup.')}finally{setBusy(false)}}
+ return <div className="field-notes"><header className="notes-intro"><div><p className="notes-kicker">YOUR PERSONAL FIELD GUIDE</p><h2>Keep the moment it clicked.</h2><p>Small explanations, useful mistakes, and ideas worth coming back to.</p></div><div className="notes-count"><strong>{documents.length}</strong><span>saved notes</span></div></header>
+ <div className="notes-layout"><section className="note-editor" aria-label="Note editor"><div className="notes-section-heading"><span className="notes-kicker">{draft.editing?'EDIT YOUR NOTE':'A NEW PAGE'}</span><span className="notes-local">On this device</span></div><label htmlFor="note-title">Give it a title</label><input ref={titleRef} id="note-title" maxLength={200} value={draft.title} disabled={busy} onChange={e=>patch({title:e.target.value})} placeholder="e.g. Why I check before saving"/><label htmlFor="note-topic">Topic</label><select id="note-topic" disabled={busy} value={draft.topic} onChange={e=>patch({topic:e.target.value})}>{[...new Set([...topics,draft.topic])].map(t=><option key={t}>{t}</option>)}</select><div className="notes-template"><span>Need a starting point?</span><button disabled={busy||!!draft.text.trim()} onClick={()=>patch({text:templates.explanation})}>Explain an idea</button><button disabled={busy||!!draft.text.trim()} onClick={()=>patch({text:templates.mistake})}>Learn from a mistake</button></div><label htmlFor="note-content">In your own words</label><textarea id="note-content" maxLength={100000} rows={12} disabled={busy} value={draft.text} onChange={e=>patch({text:e.target.value})} placeholder="What helped you understand it? Add your own example and the rule you want to remember."/><div className="notes-editor-meta"><span>{draft.text.trim()?draft.text.trim().split(/\s+/).length:0} words · draft saved on this device</span><button disabled={busy||(!draft.text&&!draft.title&&!draft.editing)} onClick={()=>{patch({title:'',text:'',topic:'General',editing:null});setStatus('Draft cleared. Saved notes are unchanged.')}}>Clear draft</button></div><button className="notes-primary" disabled={busy||!ready||!draft.text.trim()} onClick={save}>{busy?'Working…':draft.editing?'Save changes':'Save note'}</button><p className="notes-storage">Notes save without an AI download. During tutoring, matching passages can be included as reference. Matching uses shared words; the tutor may not use every note.</p>{draftWarning&&<p role="alert">{draftWarning}</p>}</section>
+ <section className="notes-library" aria-label="Saved notes"><div className="notes-section-heading"><div><p className="notes-kicker">THE IDEAS YOU KEPT</p><h3>Your notebook</h3></div><button className="notes-link" onClick={()=>onNavigate('practice')}>Back to practice ↗</button></div><label className="notes-search"><span>Find a note</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search titles, topics or words…"/></label><label className="notes-filter" htmlFor="note-filter">Filter by topic<select id="note-filter" aria-label="Filter by topic" value={filter} onChange={e=>setFilter(e.target.value)}>{['All topics',...new Set([...topics,...documents.map(n=>n.topic)])].map(t=><option key={t}>{t}</option>)}</select></label><div className="notes-library-actions"><button disabled={!ready||busy||!documents.length} onClick={()=>download('PatternOS-notes-backup.json',exportNotes(documents),'application/json')}>Back up notebook ↓</button><button disabled={!ready||busy} onClick={()=>fileRef.current?.click()}>Import backup ↑</button><input hidden ref={fileRef} type="file" accept=".json,application/json" onChange={e=>{const file=e.target.files?.[0];if(file)void restore(file);e.target.value=''}}/></div>
+ <details className="notes-backup-fallback"><summary>Copy or paste a backup</summary><p>If your browser blocks downloads, keep a copy of the backup data below. Paste it into a text file, or into the restore box on another device.</p><label htmlFor="note-backup-data">Current notebook backup</label><textarea id="note-backup-data" readOnly value={exportNotes(documents)} rows={5}/><label htmlFor="note-backup-restore">Paste a PatternOS backup to restore</label><textarea id="note-backup-restore" value={backupText} onChange={e=>setBackupText(e.target.value)} rows={4} placeholder="Paste the complete backup JSON here"/><button className="notes-primary" disabled={busy||!ready||!backupText.trim()} onClick={()=>restore(new File([backupText],'pasted-backup.json',{type:'application/json'}))}>Import pasted backup</button></details><div className="notes-status" role="status">{status||(!ready?'Opening your notebook…':'Saved in this browser. Back up your notebook before clearing site data.')}{removed&&<button disabled={busy} onClick={undo}>Undo last deletion</button>}</div>
+ {!visible.length?<div className="notes-empty"><span>✎</span><h4>{documents.length?'No matching notes':'Your next insight belongs here.'}</h4><p>{documents.length?'Try another word or topic.':'Write one explanation or save a mistake you learned from. It will appear in your notebook.'}</p></div>:<div className="note-card-list">{visible.map((n,i)=><button className="note-card" key={n.id} aria-pressed={selected===n.id} onClick={()=>setSelected(selected===n.id?null:n.id)}><span className="note-card-number">{String(i+1).padStart(2,'0')}</span><div><span className="note-topic-tag">{n.topic}</span><h4>{n.title}</h4><p>{n.text.slice(0,150)}{n.text.length>150?'…':''}</p><small>{n.updatedAt?new Date(n.updatedAt).toLocaleDateString():'Saved earlier'} · {n.text.trim().split(/\s+/).length} words</small></div><span>↗</span></button>)}</div>}
+ {active&&<article className="note-reader"><p className="notes-kicker">OPEN NOTE / {active.topic}</p><h3>{active.title}</h3><div className="note-reader-text">{active.text}</div><div className="notes-reader-actions"><button disabled={busy} onClick={()=>edit(active)}>Edit note</button><button onClick={()=>download('PatternOS-note.txt',active.title+'\n\n'+active.text,'text/plain;charset=utf-8')}>Download text</button><button disabled={busy} onClick={()=>remove(active)}>Delete note</button><button onClick={()=>setSelected(null)}>Close</button></div></article>}
+ </section></div><footer className="notes-footer">Your notes stay in this browser. They do not sync automatically to another device. Templates are prompts for your thinking, not saved lessons.</footer></div>
 }

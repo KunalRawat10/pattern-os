@@ -78,6 +78,7 @@ export async function resolveDialogueStepSafe(
 }
 
 export interface ExecuteFullAITurnParams {
+  workshopContext?: string
   userText: string
   problem?: Problem
   messages: Message[]
@@ -106,6 +107,7 @@ export async function executeFullAITurnSafe({
   problem,
   messages,
   retrievedNotes = [],
+  workshopContext = '',
   createCompletion,
   onStepEvaluated,
   learningGoal = 'concepts',
@@ -119,7 +121,7 @@ export async function executeFullAITurnSafe({
   try {
     const notes = retrievedNotes.map(r => r.chunk.text).join('\n\n')
     void userText
-    const result = await withModelDeadline(() => (smallModel ? generateSmallModelTurn : generateLessonTurn)(messages, problem, learningGoal, createCompletion, notes), timeoutMs, onTimeout)
+    const result = await withModelDeadline(() => (smallModel ? generateSmallModelTurn : generateLessonTurn)(messages, problem, learningGoal, createCompletion, notes, workshopContext), timeoutMs, onTimeout)
     onChunk?.(result.reply)
     return { finalContent: result.reply, lesson: result.lesson, usedFallback: false }
   } catch (err) {
@@ -888,6 +890,7 @@ const ChatInputBar = memo(function ChatInputBar({
 // ─── WebLLMChat ────────────────────────────────────────────────────────────────
 
 interface WebLLMChatProps {
+  onOpenWorkshopHelp?: () => void
   learningContext?: string
   onStatusChange?: (status: string) => void
   problem?: Problem
@@ -897,6 +900,7 @@ interface WebLLMChatProps {
 }
 
 export default function WebLLMChat({
+  onOpenWorkshopHelp,
   onStatusChange,
   problem,
   userSelectionToken,
@@ -1236,7 +1240,8 @@ export default function WebLLMChat({
       smallModel: cpuActive || (desktopModel ? /:(?:0\.5|1\.5)b$/.test(desktopModel) : !['1.5B', '7B'].includes(activeModelTier(activeBrowserModel))),
       problem: turnProblem,
       messages: nextMessages,
-      retrievedNotes: [...retrieved, ...(learningContext ? [{ chunk: { text: learningContext } }] : [])],
+      retrievedNotes: retrieved,
+      workshopContext: learningContext,
       createCompletion: async (payload, options) => cpuActive
         ? cpuRef.current!.complete(payload)
         : desktopModel
@@ -1526,6 +1531,7 @@ export default function WebLLMChat({
           </div>
         )}
 
+        {onOpenWorkshopHelp && !isThinking && (mode !== 'ai' || messages.at(-1)?.replyFailed) && <div className="lab-explainer"><strong>Keep learning without an AI reply</strong><p className="text-xs">App-checked workshop help uses your current exercise. It is separate from AI chat and counts as assistance.</p><button className="lab-primary" onClick={onOpenWorkshopHelp}>Use checked workshop help</button></div>}
         {!isThinking && messages.at(-1)?.replyFailed && (
           <button className="text-xs text-accent underline" onClick={() => sendMessage(messages.at(-2)?.content ?? '', true)}>
             Retry reply

@@ -56,6 +56,7 @@ export async function generateTeachingReply(
 ): Promise<string> {
   const fullSolution = requestsFullSolution(currentUserText)
   const support = needsWorkedExample(currentUserText)
+  const comparisonOnly = /\b(?:compar(?:e|ison)|differ)\b/i.test(currentUserText) && /\b(?:only|without tracing|do not trace|don.t trace)\b/i.test(currentUserText)
   const contract = fullSolution
     ? '\n\nTHIS TURN: The student explicitly requested implementation or a full solution. You may provide it, with an explanation appropriate to their level.'
     : '\n\nTHIS TURN IS GUIDED TEACHING: Teach only ONE small idea in 2-4 short sentences, at most 110 words, with at most one question. No headings, lists, code block or complete solution recipe. If they lack knowledge, explain one prerequisite and demonstrate one tiny step before a simple check. A restatement of the problem deserves acknowledgment and a next small step, not an algorithm.'
@@ -64,7 +65,7 @@ export async function generateTeachingReply(
 For this support turn ONLY, output a JSON object with exactly three string fields: "explanation" (plain definition of the missing idea), "workedExample" (actually perform one concrete action and state its result; no question), "checkQuestion" (one small prediction or application of the action you just taught, or empty if no question is needed). No markdown wrapper. The app displays these fields as normal prose. Keep all fields together under 110 words. An example is an action PLUS its outcome, not a suggestion to look at something.`
     : ''
   const turnPayload = payload.map((message, index) => index === 0
-    ? { ...message, content: message.content + contract + supportContract }
+    ? { ...message, content: message.content + contract + supportContract + (comparisonOnly ? '\nCOMPARISON ONLY: Answer this comparison and stop. Do not ask a follow-up question, offer a new exercise, or trace an input. For hash-based Set lookup, explain expected average O(1) versus scanning a list up to O(n). This is a growth bound, never a promise of exactly one operation or comparison.' : '') }
     : message)
   if (fullSolution) return generateTutorReply(turnPayload, createCompletion, onChunk)
 
@@ -80,6 +81,8 @@ For this support turn ONLY, output a JSON object with exactly three string field
       continue
     }
     const violations = guidedReplyViolations(text)
+    if (comparisonOnly && text.split(/(?<=[.!?])\s+/).some(sentence => /\bset\b.{0,150}\b(?:1|one|single)\s+(?:quick\s+)?(?:step|operation|comparison)s?\b/i.test(sentence) && !/\b(?:not|never|isn.t|doesn.t|rather than|instead of)\b/i.test(sentence))) violations.push('average O(1) is not literally one step or comparison; describe expected constant growth instead')
+    if (comparisonOnly && text.includes('?')) violations.push('the learner requested only a comparison; omit follow-up questions')
     if (support && /(?:how (?:would|could|can|do) (?:you|we) (?:check|solve|start|approach|do)|can you (?:check|find|think of|come up with))/i.test(text)) {
       violations.push('asked the beginner for an unexplained method instead of demonstrating it')
     }
@@ -89,7 +92,7 @@ For this support turn ONLY, output a JSON object with exactly three string field
     }
     turnPayload[0] = {
       ...turnPayload[0],
-      content: turnPayload[0].content + `\nYour previous draft was withheld because it had: ${violations.join(', ')}. Rewrite from scratch as just 2-3 plain sentences about the immediate concept. Explain a tiny example if needed, then ask ONE simple check. Do not enumerate the algorithm or give code.`,
+      content: turnPayload[0].content + `\nYour previous draft was withheld because it had: ${violations.join(', ')}. Rewrite from scratch as just 2-3 plain sentences about the immediate concept. ${comparisonOnly ? 'Explain only the comparison and stop. No question or offer of another task.' : 'Explain a tiny example if needed, then ask ONE simple check.'} Do not enumerate the algorithm or give code.`,
     }
   }
   throw new Error('The model did not produce a focused teaching step after one rewrite.')

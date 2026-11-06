@@ -3,6 +3,11 @@ export interface NoteChunk {
     sourceTitle: string
     text: string
     embedding: number[]
+    documentId?: string
+    originalText?: string
+    topic?: string
+    updatedAt?: string
+    part?: number
 }
 
 const DB_NAME = 'dsa-coach-notes'
@@ -115,4 +120,13 @@ export function chunkText(raw: string, maxChars = 400): string[] {
         if (current) chunks.push(current.trim())
     }
     return chunks
+}
+// Replace a complete note in one transaction so editing never leaves a partial note.
+export async function replaceNoteChunks(oldIds: string[], chunks: NoteChunk[]): Promise<void> {
+ const db=await openDB()
+ try { await new Promise<void>((resolve,reject)=>{
+  const tx=db.transaction(STORE_NAME,'readwrite'),store=tx.objectStore(STORE_NAME)
+  oldIds.forEach(id=>store.delete(id));chunks.forEach(chunk=>store.put(chunk))
+  tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error??new Error('Save cancelled'))
+ }) } finally {db.close()}
 }

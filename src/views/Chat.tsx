@@ -44,6 +44,9 @@ export default function Chat() {
 
   // Initialize from active chat problem if present, otherwise fall back to persisted progress, then default to first problem
   const [activeProblem, setActiveProblem] = useState<Problem>(() => {
+    const requested = new URLSearchParams(window.location.search).get('problem')
+    const requestedProblem = PROBLEMS.find(p => p.slug === requested)
+    if (requestedProblem) return requestedProblem
     const activeChat = loadActiveSession()
     const targetId = activeChat?.problemId ?? progress.currentProblemId
     return PROBLEMS.find((p) => p.id === targetId) ?? PROBLEMS[0]
@@ -65,6 +68,7 @@ export default function Chat() {
 
   // Triggered ONLY when a historical conversation is loaded to sync ProblemSelector display
   const handleHistorySyncProblem = (problem: Problem) => {
+    if(problem.id !== activeProblem.id){ setWorkshopContext(''); setTutorOpen(false) }
     setActiveProblem(problem)
     setCurrentProblem(problem.id)
   }
@@ -129,7 +133,7 @@ export default function Chat() {
           No backdrop-filter. bg-surface/75 is plain alpha compositing. */}
       <div id="panel-conversation" role={panel === 'conversation' ? 'tabpanel' : 'region'} aria-labelledby={panel === 'conversation' ? 'tab-conversation' : 'workshop-tutor-label'} hidden={panel !== 'conversation' && !tutorOpen} className="workspace-panel workshop-tutor p-4 sm:p-5">
         <div className="workshop-tutor-heading"><strong id="workshop-tutor-label">Your tutor</strong><button onClick={() => { setPanel('workshop'); setTutorOpen(false) }}>{panel === 'workshop' ? 'Close tutor' : 'Back to workshop'}</button></div>
-        <WebLLMChat
+        <WebLLMChat onOpenWorkshopHelp={activeProblem.slug==='contains-duplicate'?()=>{setPanel('workshop');setTutorOpen(false);workshopRef.current?.showCheckedHelp?.()}:undefined}
           onStatusChange={setStatus}
           problem={activeProblem}
           userSelectionToken={userSelectionToken}

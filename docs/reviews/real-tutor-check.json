@@ -1,0 +1,15 @@
+{
+  "model": "qwen2.5:7b",
+  "results": [
+    {
+      "question": "I wrote down 4, so my seen list is [4]. The next number is 7. What should I check before writing it down?",
+      "reply": "Great! You've written down 4, so your seen list is [4]. Now, before adding 7, check if 7 is already in your seen list. Does seen have 7?",
+      "seconds": 0.983
+    },
+    {
+      "question": "Suppose my seen list contains 1,000 different numbers. To check whether 7 is already there, would an ordinary list need to search through them? How would checking a Set differ? Explain only this comparison, without tracing [4,7,4] again.",
+      "reply": "Yes, with a regular list, checking if 7 is already there might require looking at all 1,000 numbers. In contrast, a Set can usually check in about one try, on average, because it uses a method that quickly finds or confirms the absence of 7.",
+      "seconds": 2.36
+    }
+  ]
+}

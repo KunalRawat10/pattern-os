@@ -293,12 +293,20 @@ export async function generateLessonTurn(
   messages: LessonMessage[], problem: Problem | undefined, selectedGoal: LearningGoal,
   createCompletion: Parameters<typeof generateTutorReply>[1],
   notes = '',
+  workshopContext = '',
 ): Promise<{ reply: string; lesson: LessonState; attempts: number }> {
   let state = getLessonState(messages, problem?.slug)
   const current = messages.findLast(message => message.role === 'user')?.content ?? ''
   const explicitlyRequestedCode = requestsFullSolution(current) && /\b(?:code|coding|implementation|function|programming|javascript|python|java|js)\b/i.test(current)
   const effectiveGoal = explicitlyRequestedCode ? 'code' : selectedGoal
   state.goal = effectiveGoal
+  // Workshop state is already checked by the application. Keep that lesson authoritative.
+  if (workshopContext || notes.includes('CURRENT WORKSHOP:')) {
+    const prompt = buildSystemPrompt(problem) + '\nThe student is in an interactive workshop. Use the CURRENT WORKSHOP facts supplied below as the authoritative current input and state. Answer their latest question directly, in one small step. Do not substitute another example or restart the lesson. Explain an unfamiliar term before asking them to name it. A completed trace is only one checkpoint: bridge to data-structure choice when appropriate, without forcing coding. Do not claim the whole lesson or coding is complete. If unsure about a state, ask one clarification instead of inventing values. Learning goal: ' + effectiveGoal + '\nAPP EXERCISE STATE (prioritise over reference notes):\n' + (workshopContext || notes).slice(0, 8000)
+    const payload = buildChatHistoryPayload(prompt, messages, notes)
+    const reply = effectiveGoal === 'pseudocode' ? await generateTutorReply(payload, createCompletion) : await generateTeachingReply(payload, current, createCompletion)
+    return { reply, lesson: state, attempts: 1 }
+  }
   // Keep the detailed duplicate-detection curriculum scoped to its actual problem.
   // Other problems retain open tutoring with their own statement and goal context.
   if (problem?.slug !== 'contains-duplicate') {
@@ -317,7 +325,7 @@ export async function generateLessonTurn(
   if (singleStep) return { reply: singleStep, lesson: state, attempts: 0 }
   state = await assessLearnerUnderstanding(state, messages, createCompletion)
   if (state.complete && selectedGoal === 'concepts' && isAcknowledgment(current)) {
-    return { reply: 'You can stop here: your conceptual lesson is complete. Coding is optional, and you can return to it whenever you want.', lesson: state, attempts: 0 }
+    return { reply: 'You have explained the basic example. The next useful step is choosing how to store earlier numbers: a list searches them one by one, while a Set supports fast average lookups. Open Compare two methods to explore that choice. Coding is optional.', lesson: state, attempts: 0 }
   }
   const full = requestsFullSolution(current)
   const followUp = isSpecificFollowUp(current)

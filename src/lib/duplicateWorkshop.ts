@@ -66,19 +66,27 @@ export function orderExperiment(values: Value[], addFirst: boolean): OrderFrame[
   return frames
 }
 export const BLOCKS = {
-  init: { text: 'Start with an empty Set called seen', scope: 'setup' },
-  loop: { text: 'Repeat these steps for each input number', scope: 'loop' },
-  check: { text: 'If this number is already saved, answer true (a repeat)', scope: 'inside loop' },
-  add: { text: 'Save this number in the Set', scope: 'inside loop' },
-  finish: { text: 'After checking every number, answer false (no repeat)', scope: 'after loop' },
+  init: { text: 'Start with an empty Set called seen', scope: 'Before checking any numbers' },
+  loop: { text: 'Take each number in turn (repeat the next two steps)', scope: 'Start the repeated steps' },
+  check: { text: 'If this number is already in the Set, stop: a repeat was found (true)', scope: 'For the current number' },
+  add: { text: 'Otherwise, save this new number in the Set', scope: 'For the current number' },
+  finish: { text: 'After checking every number, answer false (no repeat)', scope: 'After every number has been checked' },
 } as const
 export type BlockId = keyof typeof BLOCKS
 export const STARTING_BLOCKS: BlockId[] = ['init', 'loop', 'add', 'check', 'finish']
+export function explainBlockOrder(blocks: readonly BlockId[]): string {
+  const fixes: string[] = []
+  if (blocks.indexOf('init') !== 0) fixes.push('Move “Start with an empty Set” to position 1.')
+  if (blocks.indexOf('loop') !== 1) fixes.push('Move “Take each number in turn” to position 2.')
+  if (blocks.indexOf('finish') !== 4) fixes.push('Move “answer false (no repeat)” from position '+(blocks.indexOf('finish')+1)+' to position 5. You cannot know that no number repeats until all numbers are checked.')
+  if (blocks.indexOf('add') < blocks.indexOf('check')) fixes.push('Put the check card before the save card. Saving first makes a new number match itself: even the first 4 would look like a repeat.')
+  return fixes.join(' ') || 'The positions are valid. Run the plan to check its answers.'
+}
 export interface ProgramRun { result: boolean | null; error?: string; visited: number }
 // Interpret only these five known instructions; never evaluate arbitrary code.
 export function executeBlocks(blocks: readonly BlockId[], values: readonly Value[]): ProgramRun {
   if (blocks.length !== 5 || new Set(blocks).size !== 5 || blocks.some(id => !(id in BLOCKS))) return { result: null, error: 'Use each instruction exactly once.', visited: 0 }
-  if (blocks[0] !== 'init' || blocks[1] !== 'loop' || blocks[4] !== 'finish') return { result: null, error: 'Create the Set before the loop. Put the final false after the loop; keep the membership check and add inside it.', visited: 0 }
+  if (blocks[0] !== 'init' || blocks[1] !== 'loop' || blocks[4] !== 'finish') return { result: null, error: explainBlockOrder(blocks), visited: 0 }
   const seen = new Set<Value>()
   for (const [index, value] of values.entries()) {
     for (const instruction of blocks.slice(2, 4)) {
