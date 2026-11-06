@@ -57,6 +57,9 @@ export default function Chat() {
 
   // Triggered ONLY when the user clicks ProblemSelector to switch problems
   const handleUserSelectProblem = (problem: Problem) => {
+    const address = new URL(window.location.href)
+    address.searchParams.set('problem', problem.slug)
+    window.history.replaceState(window.history.state, '', address.pathname + address.search + address.hash)
     setActiveProblem(problem)
     setCurrentProblem(problem.id)
     recordAttempt(problem.id)
@@ -69,6 +72,9 @@ export default function Chat() {
   // Triggered ONLY when a historical conversation is loaded to sync ProblemSelector display
   const handleHistorySyncProblem = (problem: Problem) => {
     if(problem.id !== activeProblem.id){ setWorkshopContext(''); setTutorOpen(false) }
+    const address = new URL(window.location.href)
+    address.searchParams.set('problem', problem.slug)
+    window.history.replaceState(window.history.state, '', address.pathname + address.search + address.hash)
     setActiveProblem(problem)
     setCurrentProblem(problem.id)
   }
